@@ -1,53 +1,39 @@
-﻿using System.Globalization;
-using System.IO;
+﻿using System.IO;
+using System.Web;
 using System.Web.Hosting;
 using System.Web.Mvc;
-using Frapid.ApplicationState.Cache;
-using Frapid.Areas;
 
 namespace Frapid.Dashboard.Controllers
 {
-    public class DashboardController : FrapidController
+    public class DashboardController : BackendController
     {
-        private static readonly string BasePath = "~/Areas/Frapid.Dashboard/Views";
-        private static readonly string LandingPage = BasePath + "/Default/LandingPage.cshtml";
-        private static readonly string LayoutByConvention = "~/Catalogs/{0}/Areas/Frapid.Dashboard/Views/Layouts/";
-        private static readonly string FallbackLayout = "~/Areas/Frapid.Dashboard/Views/Layouts/";
-        private static readonly string LayoutFile = "Dashboard.cshtml";
+        private static readonly string LandingPage = "~/Areas/Frapid.Dashboard/Views/Default/LandingPage.cshtml";
 
-        public DashboardController()
+        private string GetLayoutFile()
         {
-            AppUsers.SetCurrentLogin();
-
-            ViewBag.ViewPath = GetViewPath();
-            ViewBag.LayoutPath = GetLayoutPath();
-            ViewBag.LayoutFile = LayoutFile;
+            string theme = Configuration.GetDefaultTheme(this.Tenant);
+            return ThemeConfiguration.GetLayout(this.Tenant, theme);
         }
 
-        protected override void OnActionExecuting(ActionExecutingContext filterContext)
+        private string GetCustomJavascriptPath()
         {
-            if (!filterContext.HttpContext.Request.IsAjaxRequest())
-            {
-                ViewBag.Layout = GetLayoutPath() + LayoutFile;
-            }
+            string path = Configuration.GetCurrentThemePath(this.Tenant) + "/custom.js";
+            path = HostingEnvironment.MapPath(path);
+
+            return !System.IO.File.Exists(path) ? string.Empty : "/dashboard/my/template/custom.js";
         }
 
-        protected ViewResultBase FrapidView(string path, object model = null)
+        private string GetCustomStylesheetPath()
         {
-            return View(this.HttpContext.Request.IsAjaxRequest() ? path : LandingPage, model);
+            string path = Configuration.GetCurrentThemePath(this.Tenant) + "/custom.css";
+            path = HostingEnvironment.MapPath(path);
+
+            return !System.IO.File.Exists(path) ? string.Empty : "/dashboard/my/template/custom.css";
         }
 
-        protected string GetViewPath(string view = "")
+        private string GetLayoutPath()
         {
-            return BasePath + view;
-        }
-
-        protected string GetLayoutPath()
-        {
-            string layout = LayoutByConvention;
-            string catalog = AppUsers.GetCatalog();
-            layout = string.Format(CultureInfo.InvariantCulture, layout, catalog);
-
+            string layout = Configuration.GetCurrentThemePath(this.Tenant);
             string layoutDirectory = HostingEnvironment.MapPath(layout);
 
             if (layoutDirectory != null && Directory.Exists(layoutDirectory))
@@ -55,7 +41,50 @@ namespace Frapid.Dashboard.Controllers
                 return layout;
             }
 
-            return FallbackLayout;
+            return null;
+        }
+
+        private bool IsAjax(HttpContextBase context)
+        {
+            if (context.Request.IsAjaxRequest())
+            {
+                return true;
+            }
+
+            string query = context.Request.QueryString["IsAjaxRequest"];
+
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                if (query.ToUpperInvariant().StartsWith("T"))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        protected override void OnActionExecuting(ActionExecutingContext filterContext)
+        {
+            base.OnActionExecuting(filterContext);
+
+            this.ViewBag.LayoutPath = this.GetLayoutPath();
+            this.ViewBag.LayoutFile = this.GetLayoutFile();
+            this.ViewBag.CustomJavascriptPath = this.GetCustomJavascriptPath();
+            this.ViewBag.CustomStylesheetPath = this.GetCustomStylesheetPath();
+
+            bool isAjax = this.IsAjax(filterContext.HttpContext);
+
+            if (!isAjax)
+            {
+                this.ViewBag.Layout = this.ViewBag.LayoutPath + this.ViewBag.LayoutFile;
+            }
+        }
+
+        protected ContentResult FrapidView(string path, object model = null)
+        {
+            bool isAjax = this.IsAjax(this.HttpContext);
+            return this.View(isAjax ? path : LandingPage, model);
         }
     }
 }

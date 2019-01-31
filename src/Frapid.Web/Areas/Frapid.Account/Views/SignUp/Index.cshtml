@@ -1,15 +1,16 @@
 ﻿@using Frapid.i18n
 @{
-    ViewBag.Title = "Sign Up";
+    ViewBag.Title = I18N.SignUp;
     Layout = ViewBag.LayoutPath + ViewBag.Layout;
+    ViewBag.Description = I18N.CreateYourAccountOnOurSite;
 }
 @if (CultureManager.IsRtl())
 {
-    <link rel="Stylesheet" href="@Href("~/bundles/master-page-rtl.css")" />
+    <link rel="Stylesheet" href="@Href("~/assets/css/backend.rtl.css")" />
 }
 else
 {
-    <link rel="Stylesheet" href="@Href("~/bundles/master-page.css")" />
+    <link rel="Stylesheet" href="@Href("~/assets/css/backend.css")" />
 }
 
 <div class="ui attached padded signup left aligned segment">
@@ -17,71 +18,69 @@ else
         <div class="ui stackable very relaxed padded grid">
             <div class="ten wide column">
                 <div class="ui stackable form">
-                    <div class="ui huge header">Create an Account</div>
+                    <div class="ui huge header">@I18N.CreateAnAccount</div>
                     <div class="ui divider"></div>
                     <div class="field">
-                        <label for="NameInputText">Your Name</label>
+                        <label for="NameInputText">@I18N.YourName</label>
                         <input type="text" id="NameInputText" maxlength="100" required="" />
                     </div>
                     <div class="two fields">
                         <div class="field">
-                            <label for="PhoneInputTel">Phone Number</label>
+                            <label for="PhoneInputTel">@I18N.PhoneNumber</label>
                             <input id="PhoneInputTel" type="tel" required="">
                         </div>
                     </div>
                     <div class="two fields">
                         <div class="field">
-                            <label for="EmailInputEmail">Email Address</label>
+                            <label for="EmailInputEmail">@I18N.EmailAddress</label>
                             <input type="email" id="EmailInputEmail" required="" />
                         </div>
                         <div class="field">
-                            <label for="ConfirmEmailInputEmail">Confirm Email</label>
+                            <label for="ConfirmEmailInputEmail">@I18N.ConfirmEmail</label>
                             <input type="email" id="ConfirmEmailInputEmail" data-match-target="EmailInputEmail" required="" />
                         </div>
                     </div>
                     <div class="two fields">
                         <div class="field">
-                            <label for="PasswordInputPassword">Password</label>
+                            <label for="PasswordInputPassword">@I18N.Password</label>
                             <input type="password"
                                    id="PasswordInputPassword"
                                    required=""
                                    maxlength="32"
                                    data-validation-expression="^(?=.*\d)(?=.*[a-z])(?=.*[A-Z]).{6,32}$"
-                                   data-validation-message="Password should contain at least 6 characters with one uppercase, lowercase, and a number."
-                                   data-validation-target=".big.error"/>
+                                   data-validation-message="@I18N.PasswordValidationMessage"
+                                   data-validation-target=".big.error" />
                         </div>
                         <div class="field">
-                            <label for="ConfirmPasswordInputPassword">Confirm Password</label>
-                            <input type="password" id="ConfirmPasswordInputPassword" data-match-target="PasswordInputPassword" required=""/>
+                            <label for="ConfirmPasswordInputPassword">@I18N.ConfirmPassword</label>
+                            <input type="password" id="ConfirmPasswordInputPassword"
+                                   data-match-target="PasswordInputPassword" required="" />
                         </div>
                     </div>
 
 
                     <div class="email address field">
-                        <label for="EmailAddressInput">Email</label>
-                        <input type="email" id="EmailAddressInput" required=""/>
-                        <div class="ui pointing label">Please leave this field empty</div>
+                        <label for="EmailAddressInput">@I18N.Email</label>
+                        <input type="email" id="EmailAddressInput" required="" />
+                        <div class="ui pointing label">@I18N.LeaveThisFieldEmpty</div>
                     </div>
 
                     <div class="field">
                         <div class="ui checkbox">
                             <input id="AgreementCheckbox" type="checkbox">
-                            <label for="AgreementCheckbox">I agree to the terms and conditions.</label>
+                            <label for="AgreementCheckbox">@I18N.IAgreeToTermsAndConditions</label>
                         </div>
                     </div>
                     <div class="big error vpad8"></div>
-                    <div class="ui blue button" id="SignUpButton">Sign Me Up</div>
-                    <a class="ui negative button" href="/">Cancel</a>
+                    <div class="ui blue button" id="SignUpButton">@I18N.SignMeUp</div>
+                    <a class="ui negative button" href="/">@I18N.Cancel</a>
                 </div>
             </div>
             <div class="six wide column">
                 <div class="ui positive message">
-                    <div class="ui header">Please Note</div>
+                    <div class="ui header">@I18N.PleaseNote</div>
                     <div class="ui divider"></div>
-                    We use cookies in our website.
-                    Please read the <a href="/site/terms-of-use">terms of use</a>
-                    and <a href="/site/privacy-policy">privacy policy</a> before you create
-                    an account in our website.
+                    @Html.Raw(I18N.CookieMessage)
                 </div>
             </div>
         </div>
@@ -89,9 +88,10 @@ else
     </div>
 </div>
 
-<script src="/i18n/resources.js"></script>
-<script src="/bundles/backend.js"></script>
-<script src="/Scripts/jssha1.5/src/sha.js"></script>
-<script src="/Scripts/frapid/utitlities/form.js"></script>
-<script src="/Scripts/frapid/utitlities/validator.js"></script>
-<script src="/Areas/Frapid.Account/Scripts/Account/SignUp/signup.js"></script>
+<script src="/i18n/resources.js?cultureCode=@CultureManager.GetCurrentUiCulture().Name"></script>
+<script src="/scripts/frapid/utilities/localizable.js"></script>
+<script src="/scripts/frapid/core/frapid-ajax.js"></script>
+<script src="/scripts/frapid/core/validation.js"></script>
+<script src="/scripts/frapid/utilities/validator.js"></script>
+<script src="/scripts/frapid/utilities/form.js"></script>
+<script src="/Areas/Frapid.Account/scripts/account/sign-up/signup.js"></script>

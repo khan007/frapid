@@ -1,17 +1,24 @@
 ﻿using System.Threading.Tasks;
 using Facebook;
-using Frapid.Areas;
 using Frapid.Account.DAL;
 using Frapid.Account.DTO;
+using Frapid.Account.Emails;
 using Frapid.Account.InputModels;
-using Frapid.Account.Messaging;
-using Frapid.Account.Models;
-using Registration = Frapid.Account.DAL.Registration;
+using Frapid.Account.ViewModels;
+using Frapid.Areas;
+using Frapid.i18n;
 
 namespace Frapid.Account.RemoteAuthentication
 {
     public class FacebookAuthentication
     {
+        public FacebookAuthentication(string tenant)
+        {
+            this.Tenant = tenant;
+        }
+
+        public string Tenant { get; }
+
         public string ProviderName => "Facebook";
 
         private bool Validate(FacebookUserInfo user, string id, string email)
@@ -21,7 +28,7 @@ namespace Frapid.Account.RemoteAuthentication
 
         private FacebookUserInfo GetFacebookUserInfo(string token)
         {
-            FacebookClient facebook = new FacebookClient(token);
+            var facebook = new FacebookClient(token);
             dynamic me = facebook.Get("me", new {fields = new[] {"id", "email", "name"}});
 
             return new FacebookUserInfo
@@ -34,27 +41,29 @@ namespace Frapid.Account.RemoteAuthentication
 
         public async Task<LoginResult> AuthenticateAsync(FacebookAccount account, RemoteUser user)
         {
-            FacebookUserInfo facebookUser = GetFacebookUserInfo(account.Token);
+            var facebookUser = this.GetFacebookUserInfo(account.Token);
 
-            if (!Validate(facebookUser, account.FacebookUserId, account.Email))
+            if (!this.Validate(facebookUser, account.FacebookUserId, account.Email))
             {
                 return new LoginResult
                 {
                     Status = false,
-                    Message = "Access is denied"
+                    Message = Resources.AccessIsDenied
                 };
             }
 
-            LoginResult result = FacebookSignIn.SignIn(account.FacebookUserId, account.Email, account.OfficeId, facebookUser.Name, account.Token, user.Browser,
-                user.IpAddress, account.Culture);
+            var result =
+                await
+                    FacebookSignIn.SignInAsync(this.Tenant, account.FacebookUserId, account.Email, account.OfficeId, facebookUser.Name, account.Token, user.Browser, user.IpAddress, account.Culture)
+                        .ConfigureAwait(false);
 
             if (result.Status)
             {
-                if (!Registration.HasAccount(account.Email))
+                if (!await Registrations.HasAccountAsync(this.Tenant, account.Email).ConfigureAwait(false))
                 {
-                    string template = "~/Catalogs/{catalog}/Areas/Frapid.Account/EmailTemplates/welcome-3rd-party.html";
-                    WelcomeEmail welcomeEmail = new WelcomeEmail(facebookUser, template, ProviderName);
-                    await welcomeEmail.SendAsync();
+                    string template = "~/Tenants/{tenant}/Areas/Frapid.Account/EmailTemplates/welcome-email-other.html";
+                    var welcomeEmail = new WelcomeEmail(facebookUser, template, this.ProviderName);
+                    await welcomeEmail.SendAsync(this.Tenant).ConfigureAwait(false);
                 }
             }
             return result;

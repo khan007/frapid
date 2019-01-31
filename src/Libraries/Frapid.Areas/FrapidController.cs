@@ -1,62 +1,85 @@
 ﻿using System.Globalization;
-using System.Web.Hosting;
+using System.Security.Claims;
 using System.Web.Mvc;
+using System.Web.Routing;
+using Frapid.ApplicationState.Cache;
 using Frapid.Configuration;
-using Frapid.i18n;
+using Frapid.Framework.Extensions;
+using Frapid.TokenManager;
+using Frapid.TokenManager.DAL;
+using Microsoft.AspNet.Identity;
 
 namespace Frapid.Areas
 {
-    public abstract class FrapidController : Controller
+    public abstract class FrapidController : BaseController
     {
-        public RemoteUser RemoteUser { get; private set; }
+        public AppUser AppUser { get; set; }
 
-        protected FrapidController()
+        protected override void OnActionExecuting(ActionExecutingContext context)
         {
-            this.RemoteUser = new RemoteUser
-            {
-                Browser = this.Request?.Browser.Browser,
-                IpAddress = this.Request?.UserHostAddress,
-                Culture = CultureManager.GetCurrent().Name
-            };
+            base.OnActionExecuting(context);
+            this.Initialize(context.RequestContext);
         }
 
-
-        protected string GetRazorView(string areaName, string path)
+        protected override void Initialize(RequestContext context)
         {
-            string catalog = DbConvention.GetCatalog();
+            string tenant = TenantConvention.GetTenant();
+            string clientToken = context.HttpContext.Request.GetClientToken();
+            var provider = new Provider();
+            var token = provider.GetToken(clientToken);
 
-            string overridePath = "~/Catalogs/{0}/Areas/{1}/Views/" + path;
-            overridePath = string.Format(CultureInfo.InvariantCulture, overridePath, catalog, areaName);
-
-            if (System.IO.File.Exists(HostingEnvironment.MapPath(overridePath)))
+            if (token != null)
             {
-                return overridePath;
+                bool isValid = AccessTokens.IsValidAsync(tenant, token.ClientToken, context.HttpContext.GetClientIpAddress(), context.HttpContext.GetUserAgent()).GetAwaiter().GetResult();
+
+                if (isValid)
+                {
+                    AppUsers.SetCurrentLoginAsync(tenant, token.LoginId).GetAwaiter().GetResult();
+                    var loginView = AppUsers.GetCurrentAsync(tenant, token.LoginId).GetAwaiter().GetResult();
+
+                    this.AppUser = new AppUser
+                    {
+                        Tenant = tenant,
+                        ClientToken = token.ClientToken,
+                        LoginId = loginView.LoginId,
+                        UserId = loginView.UserId,
+                        Name = loginView.Name,
+                        OfficeId = loginView.OfficeId,
+                        OfficeName = loginView.OfficeName,
+                        Email = loginView.Email,
+                        RoleId = loginView.RoleId,
+                        RoleName = loginView.RoleName,
+                        IsAdministrator = loginView.IsAdministrator
+                    };
+
+                    var identity = new ClaimsIdentity(token.GetClaims(), DefaultAuthenticationTypes.ApplicationCookie,
+                        ClaimTypes.NameIdentifier, ClaimTypes.Role);
+                    identity.AddClaim(new Claim(ClaimTypes.NameIdentifier,
+                        token.LoginId.ToString(CultureInfo.InvariantCulture)));
+
+                    if (loginView.RoleName != null)
+                    {
+                        identity.AddClaim(new Claim(ClaimTypes.Role, loginView.RoleName));
+                    }
+
+                    if (loginView.Email != null)
+                    {
+                        identity.AddClaim(new Claim(ClaimTypes.Email, loginView.Email));
+                    }
+
+                    context.HttpContext.User = new ClaimsPrincipal(identity);
+                }
             }
 
-            string defaultPath = "~/Areas/{0}/Views/{1}";
-            defaultPath = string.Format(CultureInfo.InvariantCulture, defaultPath, areaName, path);
+            if (this.AppUser == null)
+            {
+                this.AppUser = new AppUser
+                {
+                    Tenant = tenant
+                };
+            }
 
-            return defaultPath;
-        }
-
-        protected string GetRazorView(string areaName, string controllerName, string actionName)
-        {
-            string path = controllerName.ToLower() + "/" + actionName.ToLower() + ".cshtml";
-            return this.GetRazorView(areaName, path);
-        }
-
-        protected string GetRazorView<T>(string path) where T : FrapidAreaRegistration, new()
-        {
-            FrapidAreaRegistration registration = new T();
-            return this.GetRazorView(registration.AreaName, path);
-        }
-
-        protected string GetRazorView<T>(string controllerName, string actionName)
-            where T : FrapidAreaRegistration, new()
-        {
-            FrapidAreaRegistration registration = new T();
-            string path = controllerName.ToLower() + "/" + actionName.ToLower() + ".cshtml";
-            return this.GetRazorView(registration.AreaName, path);
+            base.Initialize(context);
         }
     }
 }

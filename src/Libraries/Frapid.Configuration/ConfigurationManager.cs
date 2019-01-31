@@ -1,5 +1,5 @@
 ﻿using System.Configuration;
-using System.Web.Hosting;
+using Serilog;
 
 namespace Frapid.Configuration
 {
@@ -13,14 +13,19 @@ namespace Frapid.Configuration
         /// <returns>Returns the configuration value of the requested key.</returns>
         public static string GetConfigurationValue(string configFileName, string key)
         {
+            Log.Verbose($"Getting configuration key \"{key}\" on config file \"{configFileName}\".");
+
             if (configFileName == null)
             {
+                Log.Verbose($"Empty string returned for the key \"{key}\" because no config file name was provided.");
                 return string.Empty;
             }
 
             string fileName = System.Configuration.ConfigurationManager.AppSettings[configFileName];
+            Log.Verbose($"Configuration file for \"{configFileName}\" is {fileName}.");
 
-            string path = HostingEnvironment.MapPath(fileName);
+            string path = PathMapper.MapPath(fileName);
+
             return ReadConfigurationValue(path, key);
         }
 
@@ -32,14 +37,39 @@ namespace Frapid.Configuration
         /// <returns>Returns the configuration value of the requested key.</returns>
         public static string ReadConfigurationValue(string path, string key)
         {
-            var configFileMap = new ExeConfigurationFileMap {ExeConfigFilename = path};
+            var configFileMap = new ExeConfigurationFileMap
+            {
+                ExeConfigFilename = path
+            };
 
-            var config = System.Configuration.ConfigurationManager
-                .OpenMappedExeConfiguration(configFileMap, ConfigurationUserLevel.None);
+            var config = System.Configuration.ConfigurationManager.OpenMappedExeConfiguration(configFileMap, ConfigurationUserLevel.None);
 
             var section = config.GetSection("appSettings") as AppSettingsSection;
 
             return section?.Settings[key] != null ? section.Settings[key].Value : string.Empty;
+        }
+
+        /// <summary>
+        ///     Saves appSettings key configuration on the requested file.
+        /// </summary>
+        /// <param name="path">Path to configuration file.</param>
+        /// <param name="key">The key to edit.</param>
+        /// <param name="value">The value to edit the key with.</param>
+        public static void SetConfigurationValue(string path, string key, string value)
+        {
+            var configFileMap = new ExeConfigurationFileMap
+            {
+                ExeConfigFilename = path
+            };
+            var config = System.Configuration.ConfigurationManager.OpenMappedExeConfiguration(configFileMap, ConfigurationUserLevel.None);
+            var section = config.GetSection("appSettings") as AppSettingsSection;
+
+            if (section?.Settings[key] != null)
+            {
+                section.Settings[key].Value = value;
+            }
+
+            config.Save(ConfigurationSaveMode.Modified);
         }
     }
 }

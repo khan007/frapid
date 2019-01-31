@@ -1,112 +1,133 @@
 ﻿using System.Collections.Generic;
-using Frapid.Configuration;
-using Frapid.i18n;
-using Frapid.NPoco;
-using Npgsql;
+using System.Threading.Tasks;
+using Frapid.Configuration.Db;
+using Frapid.Mapper;
+using Frapid.Mapper.Query.Insert;
+using Frapid.Mapper.Query.NonQuery;
+using Frapid.Mapper.Query.Select;
+using Frapid.Mapper.Query.Update;
 
 namespace Frapid.DataAccess
 {
     public static class Factory
     {
-        public const string ProviderName = "Npgsql";
-
-        public static readonly string MetaDatabase =
-            ConfigurationManager.GetConfigurationValue("DbServerConfigFileLocation", "MetaDatabase");
-
-        public static T Single<T>(string catalog, string sql, params object[] args)
+        public static string GetProviderName(string tenant)
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            return DbProvider.GetProviderName(tenant);
+        }
+
+        public static string GetMetaDatabase(string tenant)
+        {
+            return DbProvider.GetMetaDatabase(tenant);
+        }
+
+        public static async Task<IEnumerable<T>> GetAsync<T>(string database, string sql, params object[] args) where T : new()
+        {
+            using (var db = DbProvider.GetDatabase(database))
             {
-                return db.Single<T>(sql, args);
+                return await db.SelectAsync<T>(sql, args).ConfigureAwait(false);
             }
         }
 
-        public static IEnumerable<T> Get<T>(string catalog, string sql, params object[] args)
+        public static async Task<IEnumerable<T>> GetAsync<T>(string database, string sql) where T : new()
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                return db.Query<T>(sql, args);
+                return await db.SelectAsync<T>(sql).ConfigureAwait(false);
             }
         }
 
-        public static IEnumerable<T> Get<T>(string catalog, string sql)
+        public static async Task<IEnumerable<T>> GetAsync<T>(string database, Sql sql) where T : new()
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                return db.Query<T>(sql);
+                return await db.SelectAsync<T>(sql).ConfigureAwait(false);
             }
         }
 
-        public static IEnumerable<T> Get<T>(string catalog, Sql sql)
+        public static async Task<object> InsertAsync(string database, object poco, string tableName = "", string primaryKeyName = "", bool autoIncrement = true)
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                var retVal = db.Query<T>(sql);
-                return retVal;
-            }
-        }
-
-        public static object Insert(string catalog, object poco, string tableName = "", string primaryKeyName = "")
-        {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
-            {
-                if (!string.IsNullOrWhiteSpace(tableName) && !string.IsNullOrWhiteSpace(primaryKeyName))
+                if (!string.IsNullOrWhiteSpace(tableName) &&
+                    !string.IsNullOrWhiteSpace(primaryKeyName))
                 {
-                    return db.Insert(tableName, primaryKeyName, poco);
+                    return await db.InsertAsync(tableName, primaryKeyName, autoIncrement, poco).ConfigureAwait(false);
                 }
 
-                return db.Insert(poco);
+                return await db.InsertAsync(poco).ConfigureAwait(false);
             }
         }
 
-        public static object Update(string catalog, object poco, object primaryKeyValue, string tableName = "",
-            string primaryKeyName = "")
+        public static async Task UpdateAsync<T>(string database, T poco, object primaryKeyValue, string tableName = "", string primaryKeyName = "")
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                if (!string.IsNullOrWhiteSpace(tableName) && !string.IsNullOrWhiteSpace(primaryKeyName))
+                if (!string.IsNullOrWhiteSpace(tableName) &&
+                    !string.IsNullOrWhiteSpace(primaryKeyName))
                 {
-                    return db.Update(tableName, primaryKeyName, poco, primaryKeyValue);
+                    await db.UpdateAsync(poco, primaryKeyValue, tableName, primaryKeyName).ConfigureAwait(false);
                 }
 
-                return db.Update(poco, primaryKeyValue);
+                await db.UpdateAsync(poco, primaryKeyValue).ConfigureAwait(false);
             }
         }
 
-        public static T Scalar<T>(string catalog, string sql, params object[] args)
+
+        public static async Task<T> ScalarAsync<T>(string database, string sql, params object[] args)
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                return db.ExecuteScalar<T>(sql, args);
+                return await db.ScalarAsync<T>(sql, args).ConfigureAwait(false);
             }
         }
 
-        public static T Scalar<T>(string catalog, Sql sql)
+        public static async Task<T> ScalarAsync<T>(string database, Sql sql)
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                return db.ExecuteScalar<T>(sql);
+                return await db.ScalarAsync<T>(sql).ConfigureAwait(false);
             }
         }
 
-        public static void NonQuery(string catalog, string sql, params object[] args)
+        public static async Task NonQueryAsync(string database, string sql, params object[] args)
         {
-            using (var db = DbProvider.Get(ConnectionString.GetConnectionString(catalog)).GetDatabase())
+            using (var db = DbProvider.GetDatabase(database))
             {
-                db.Execute(sql, args);
+                await db.NonQueryAsync(sql, args).ConfigureAwait(false);
             }
         }
 
-        public static string GetDbErrorResource(NpgsqlException ex)
+        public static async Task NonQueryAsync(string database, Sql sql)
         {
-            string message = ResourceManager.TryGetResourceFromCache("DbErrors", ex.Code);
-
-            if (string.IsNullOrWhiteSpace(message) || message == ex.Code)
+            using (var db = DbProvider.GetDatabase(database))
             {
-                return ex.Message;
+                await db.NonQueryAsync(sql).ConfigureAwait(false);
             }
+        }
 
-            return message;
+        public static async Task ExecuteAsync(string connectionString, string tenant, string sql, params object[] args)
+        {
+            using (var db = DbProvider.GetDatabase(tenant, connectionString))
+            {
+                await db.NonQueryAsync(sql, args).ConfigureAwait(false);
+            }
+        }
+
+        public static async Task ExecuteAsync(string connectionString, string tenant, string database, string sql, params object[] args)
+        {
+            using (var db = DbProvider.GetDatabase(tenant, connectionString))
+            {
+                await db.NonQueryAsync(sql, args).ConfigureAwait(false);
+            }
+        }
+
+        public static async Task<T> ExecuteScalarAsync<T>(string connectionString, string tenant, Sql sql)
+        {
+            using (var db = DbProvider.GetDatabase(tenant, connectionString))
+            {
+                return await db.ScalarAsync<T>(sql).ConfigureAwait(false);
+            }
         }
     }
 }

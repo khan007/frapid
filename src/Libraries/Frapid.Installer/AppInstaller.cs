@@ -1,112 +1,135 @@
-﻿using System.Data;
+﻿using System;
 using System.Globalization;
 using System.IO;
-using System.Web.Hosting;
+using System.Threading.Tasks;
 using Frapid.Configuration;
+using Frapid.Configuration.Db;
+using Frapid.Configuration.Models;
 using Frapid.DataAccess;
-using Frapid.Installer.Models;
-using Microsoft.VisualBasic.FileIO;
-using Npgsql;
+using Frapid.Framework;
+using Frapid.Installer.DAL;
+using Frapid.Installer.Helpers;
+using Frapid.Installer.Tenant;
 
 namespace Frapid.Installer
 {
     public class AppInstaller
     {
-        public AppInstaller(string catalog, Installable installable)
+        public AppInstaller(string tenant, string database, bool withoutSample, Installable installable)
         {
-            this.Catalog = catalog;
+            this.Tenant = tenant;
+            this.Database = database;
+            this.WithoutSample = withoutSample;
             this.Installable = installable;
         }
 
         public Installable Installable { get; }
-        protected string Catalog { get; set; }
+        protected string Tenant { get; set; }
+        protected string Database { get; set; }
+        protected bool WithoutSample { get; set; }
 
-        public bool HasSchema()
+        public async Task<bool> HasSchemaAsync(string database)
         {
-            const string sql = "SELECT COUNT(*) FROM pg_catalog.pg_namespace WHERE nspname=@0;";
-            return Factory.Scalar<int>(this.Catalog, sql, this.Installable.DbSchema).Equals(1);
+            return await Store.HasSchemaAsync(this.Tenant, database, this.Installable.DbSchema).ConfigureAwait(false);
         }
 
-        public void Install()
+        public async Task InstallAsync()
         {
-            foreach (var dependency in this.Installable.Dependencies)
+            if (Installer.Tenant.Installer.InstalledApps.Contains(this.Installable))
             {
-                new AppInstaller(this.Catalog, dependency).Install();
+                return;
             }
 
-            this.CreateSchema();
-            this.CreateMy();
+            foreach (var dependency in this.Installable.Dependencies)
+            {
+                await new AppInstaller(this.Tenant, this.Database, this.WithoutSample, dependency).InstallAsync().ConfigureAwait(false);
+            }
+
+            InstallerLog.Verbose($"Installing module {this.Installable.ApplicationName}.");
+
+            await this.CreateSchemaAsync().ConfigureAwait(false);
+            await this.CreateMyAsync().ConfigureAwait(false);
             this.CreateOverride();
+            Installer.Tenant.Installer.InstalledApps.Add(this.Installable);
+
+            if (this.Installable.ApplicationName == "Frapid.Account")
+            {
+                var domain = TenantConvention.FindDomainByTenant(this.Tenant);
+                await UserInstaller.CreateUserAsync(this.Tenant, domain).ConfigureAwait(false);
+            }
         }
 
-        protected void CreateMy()
+        protected async Task CreateMyAsync()
         {
             if (string.IsNullOrWhiteSpace(this.Installable.My))
             {
                 return;
             }
 
-            string catalog = this.Catalog;
+            string database = this.Database;
             if (this.Installable.IsMeta)
             {
-                catalog = Factory.MetaDatabase;
+                database = Factory.GetMetaDatabase(database);
             }
 
             string db = this.Installable.My;
-            string path = HostingEnvironment.MapPath(db);
-            this.RunSql(catalog, path);
+            string path = PathMapper.MapPath(db);
+            await this.RunSqlAsync(database, database, path).ConfigureAwait(false);
         }
 
-        protected void CreateSchema()
+        protected async Task CreateSchemaAsync()
         {
+            string database = this.Database;
+
+            if (this.Installable.IsMeta)
+            {
+                InstallerLog.Verbose($"Creating database of {this.Installable.ApplicationName} under meta database {Factory.GetMetaDatabase(this.Database)}.");
+                database = Factory.GetMetaDatabase(this.Database);
+            }
+
             if (string.IsNullOrWhiteSpace(this.Installable.DbSchema))
             {
                 return;
             }
 
-            if (this.HasSchema())
+
+            if (await this.HasSchemaAsync(database).ConfigureAwait(false))
             {
+                InstallerLog.Verbose($"Skipped {this.Installable.ApplicationName} schema ({this.Installable.DbSchema}) creation because it already exists.");
                 return;
             }
 
-            string catalog = this.Catalog;
-            if (this.Installable.IsMeta)
-            {
-                catalog = Factory.MetaDatabase;
-            }
+            InstallerLog.Verbose($"Creating schema {this.Installable.DbSchema}");
+
 
             string db = this.Installable.BlankDbPath;
+            string path = PathMapper.MapPath(db);
+            await this.RunSqlAsync(this.Tenant, database, path).ConfigureAwait(false);
+
 
             if (this.Installable.InstallSample && !string.IsNullOrWhiteSpace(this.Installable.SampleDbPath))
             {
-                db = this.Installable.SampleDbPath;
+                //Manually override sample data installation
+                if (!this.WithoutSample)
+                {
+                    InstallerLog.Verbose($"Creating sample data of {this.Installable.ApplicationName}.");
+                    db = this.Installable.SampleDbPath;
+                    path = PathMapper.MapPath(db);
+                    await this.RunSqlAsync(database, database, path).ConfigureAwait(false);
+                }
             }
-
-            string path = HostingEnvironment.MapPath(db);
-            this.RunSql(catalog, path);
         }
 
-        private void RunSql(string catalog, string fromFile)
+        private async Task RunSqlAsync(string tenant, string database, string fromFile)
         {
-            if (string.IsNullOrWhiteSpace(fromFile))
+            try
             {
-                return;
+                await Store.RunSqlAsync(tenant, database, fromFile).ConfigureAwait(false);
             }
-
-            string sql = File.ReadAllText(fromFile);
-            string connectionString = ConnectionString.GetSuperUserConnectionString(catalog);
-
-            using (var connection = new NpgsqlConnection(connectionString))
+            catch (Exception ex)
             {
-                using (var command = new NpgsqlCommand())
-                {
-                    command.CommandText = sql;
-                    command.Connection = connection;
-                    command.CommandType = CommandType.Text;
-
-                    connection.Open();
-                    command.ExecuteScalar();
-                }
+                InstallerLog.Verbose($"{ex.Message}");
+                throw;
             }
         }
 
@@ -119,12 +142,21 @@ namespace Frapid.Installer
                 return;
             }
 
-            string source = HostingEnvironment.MapPath(this.Installable.OverrideTemplatePath);
-            string destination = string.Format(CultureInfo.InvariantCulture, this.Installable.OverrideDestination, this.Catalog);
-            destination = HostingEnvironment.MapPath(destination);
+            string providerName = DbProvider.GetProviderName(this.Tenant);
+
+            if (!string.IsNullOrWhiteSpace(this.Installable.OverrideTenantProviderType) && !this.Installable.OverrideTenantProviderType.ToUpperInvariant().Trim().Equals(providerName.ToUpperInvariant().Trim()))
+            {
+                return;
+            }
+
+            string source = PathMapper.MapPath(this.Installable.OverrideTemplatePath);
+            string destination = string.Format(CultureInfo.InvariantCulture, this.Installable.OverrideDestination,
+                this.Database);
+            destination = PathMapper.MapPath(destination);
 
 
-            if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(destination))
+            if (string.IsNullOrWhiteSpace(source) ||
+                string.IsNullOrWhiteSpace(destination))
             {
                 return;
             }
@@ -134,7 +166,8 @@ namespace Frapid.Installer
                 return;
             }
 
-            FileSystem.CopyDirectory(source, destination, true);
+            InstallerLog.Verbose($"Creating overide. Source: {source}, desitation: {destination}.");
+            FileHelper.CopyDirectory(source, destination);
         }
     }
 }

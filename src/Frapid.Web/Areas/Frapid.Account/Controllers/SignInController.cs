@@ -1,72 +1,79 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Data.Common;
 using System.Globalization;
 using System.Linq;
+using System.Net;
+using System.Threading.Tasks;
 using System.Web.Mvc;
-using AutoMapper;
-using Frapid.Account.DTO;
+using Frapid.Account.DAL;
 using Frapid.Account.InputModels;
-using Frapid.Account.ViewModels;
+using Frapid.Areas.CSRF;
 using Frapid.Configuration;
-using Office = Frapid.Account.DAL.Office;
-using Npgsql;
+using Frapid.Framework.Extensions;
+using Mapster;
+using Serilog;
+using SignIn = Frapid.Account.ViewModels.SignIn;
 
 namespace Frapid.Account.Controllers
 {
+    [AntiForgery]
     public class SignInController : BaseAuthenticationController
     {
         [Route("account/sign-in")]
+        [Route("account/sign-in/social")]
         [Route("account/log-in")]
+        [Route("account/log-in/social")]
         [AllowAnonymous]
-        public ActionResult Index()
+        public async Task<ActionResult> IndexAsync()
         {
-            if (User.Identity.IsAuthenticated)
+            if (this.User.Identity.IsAuthenticated)
             {
-                return Redirect("/dashboard");
+                return this.Redirect("/dashboard");
             }
 
-            ConfigurationProfile profile = DAL.Configuration.GetActiveProfile();
-            Mapper.CreateMap<ConfigurationProfile, SignIn>();
-            SignIn model = Mapper.Map<SignIn>(profile);
+            var profile = await ConfigurationProfiles.GetActiveProfileAsync(this.Tenant).ConfigureAwait(true);
 
-            return View(GetRazorView<AreaRegistration>("SignIn/Index.cshtml"), model);
+            var model = profile.Adapt<SignIn>() ?? new SignIn();
+            return this.View(this.GetRazorView<AreaRegistration>("SignIn/Index.cshtml", this.Tenant), model);
         }
 
         [Route("account/sign-in")]
         [Route("account/log-in")]
         [HttpPost]
         [AllowAnonymous]
-        public ActionResult Do(SignInInfo model)
+        public async Task<ActionResult> DoAsync(SignInInfo model)
         {
-            System.Threading.Thread.Sleep(1000);
-
-            string challenge = Session["Challenge"].ToString();
-            if (model.Challenge != challenge)
+            if (!this.ModelState.IsValid)
             {
-                return Redirect("/");
+                return this.InvalidModelState(this.ModelState);
             }
-
-            model.Browser = this.RemoteUser.Browser;
-            model.IpAddress = this.RemoteUser.IpAddress;
 
             try
             {
-                LoginResult result = DAL.SignIn.Do(model.Email, model.OfficeId, model.Challenge, model.Password,
-                    model.Browser, model.IpAddress, model.Culture);
-                return this.OnAuthenticated(result);
+                bool isValid = await this.CheckPasswordAsync(model.Email, model.Password).ConfigureAwait(false);
+
+                if (!isValid)
+                {
+                    return new HttpStatusCodeResult(HttpStatusCode.Forbidden);
+                }
+
+                var result = await DAL.SignIn.DoAsync(this.Tenant, model.Email, model.OfficeId, this.RemoteUser.Browser, this.RemoteUser.IpAddress, model.Culture.Or("en-US")).ConfigureAwait(false);
+
+                return await this.OnAuthenticatedAsync(result, model).ConfigureAwait(true);
             }
-            catch (NpgsqlException)
+            catch (DbException ex)
             {
-                return Json("Access is denied.");                
+                Log.Information(ex.Message);
+                return this.AccessDenied();
             }
         }
 
         [Route("account/sign-in/offices")]
         [Route("account/log-in/offices")]
         [AllowAnonymous]
-        public ActionResult GetOffices()
+        public async Task<ActionResult> GetOfficesAsync()
         {
-            return Json(Office.GetOffices(), JsonRequestBehavior.AllowGet);
+            var model = await Offices.GetOfficesAsync(this.Tenant).ConfigureAwait(true);
+            return this.Ok(model);
         }
 
         [Route("account/sign-in/languages")]
@@ -74,21 +81,21 @@ namespace Frapid.Account.Controllers
         [AllowAnonymous]
         public ActionResult GetLanguages()
         {
-            string[] cultures =
-                ConfigurationManager.GetConfigurationValue("ParameterConfigFileLocation", "Cultures").Split(',');
-            List<Language> languages = (from culture in cultures
+            var cultures = ConfigurationManager.GetConfigurationValue("ParameterConfigFileLocation", "Cultures").Split(',');
+
+            var languages = (from culture in cultures
                 select culture.Trim()
                 into cultureName
                 from info in
-                    CultureInfo.GetCultures(CultureTypes.AllCultures)
-                        .Where(x => x.TwoLetterISOLanguageName.Equals(cultureName))
-                select new Language
+                CultureInfo.GetCultures(CultureTypes.AllCultures)
+                    .Where(x => x.TwoLetterISOLanguageName.Equals(cultureName))
+                select new
                 {
                     CultureCode = info.Name,
-                    NativeName = info.NativeName
+                    info.NativeName
                 }).ToList();
 
-            return Json(languages, JsonRequestBehavior.AllowGet);
+            return this.Ok(languages);
         }
     }
 }

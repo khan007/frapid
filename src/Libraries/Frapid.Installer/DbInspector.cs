@@ -1,29 +1,31 @@
 ﻿using System.Linq;
+using System.Threading.Tasks;
 using Frapid.Configuration;
-using Frapid.DataAccess;
+using Frapid.Installer.DAL;
 
 namespace Frapid.Installer
 {
     public class DbInspector
     {
-        public DbInspector(string catalog)
+        public DbInspector(string tenant, string database)
         {
-            this.Catalog = catalog;
+            this.Tenant = tenant;
+            this.Database = database;
         }
 
-        public string Catalog { get; }
+        public string Tenant { get; }
+        public string Database { get; }
 
-        public bool HasDb()
+        public async Task<bool> HasDbAsync()
         {
-            const string sql = "SELECT COUNT(*) FROM pg_catalog.pg_database WHERE datname=@0;";
-            return Factory.Scalar<int>(Factory.MetaDatabase, sql, this.Catalog).Equals(1);
+            return await Store.HasDbAsync(this.Tenant, this.Database).ConfigureAwait(false);
         }
 
         public bool IsWellKnownDb()
         {
-            var serializer = new DomainSerializer("domains-approved.json");
+            var serializer = new ApprovedDomainSerializer();
             var domains = serializer.Get();
-            return domains.Any(domain => DbConvention.GetCatalog(domain) == this.Catalog);
+            return domains.Any(domain => TenantConvention.GetTenant(domain.DomainName) == this.Tenant);
         }
     }
 }

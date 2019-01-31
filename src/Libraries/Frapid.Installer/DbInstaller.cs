@@ -1,45 +1,74 @@
-﻿using System.Globalization;
+﻿using System.Threading.Tasks;
 using Frapid.Configuration;
-using Frapid.DataAccess;
-using Npgsql;
+using Frapid.Configuration.Db;
+using Frapid.Framework.Extensions;
+using Frapid.Installer.DAL;
+using Frapid.Installer.Helpers;
 
 namespace Frapid.Installer
 {
     public sealed class DbInstaller
     {
-        public DbInstaller(string catalog)
+        public DbInstaller(string domain)
         {
-            this.Catalog = catalog;
+            this.Tenant = domain;
         }
 
-        public string Catalog { get; }
+        public string Tenant { get; }
 
-        public bool Install()
+        private static bool IsDevelopment()
         {
-            var inspector = new DbInspector(this.Catalog);
-            bool hasDb = inspector.HasDb();
-            bool canInstall = inspector.IsWellKnownDb();
+            string path = PathMapper.MapPath("~/Resources/Configs/Parameters.config");
+            string value = ConfigurationManager.ReadConfigurationValue(path, "IsDevelopment");
+            return value.Or("").ToUpperInvariant().StartsWith("T");
+        }
 
-            if (!hasDb && canInstall)
+
+        public async Task<bool> InstallAsync()
+        {
+            string meta = DbProvider.GetMetaDatabase(this.Tenant);
+            var inspector = new DbInspector(this.Tenant, meta);
+            bool hasDb = await inspector.HasDbAsync().ConfigureAwait(false);
+            bool isWellKnown = inspector.IsWellKnownDb();
+
+            if (hasDb)
             {
-                return this.CreateDb();
+                if (IsDevelopment())
+                {
+                    InstallerLog.Verbose("Cleaning up the database.");
+                    await this.CleanUpDbAsync().ConfigureAwait(true);
+                }
+                else
+                {
+                    InstallerLog.Information("Warning: database already exists. Please remove the database first.");
+                    InstallerLog.Verbose($"No need to create database \"{this.Tenant}\" because it already exists.");
+                }
+            }
+
+            if (!isWellKnown)
+            {
+                InstallerLog.Verbose(
+                    $"Cannot create a database under the name \"{this.Tenant}\" because the name is not a well-known tenant name.");
+            }
+
+            if (!hasDb && isWellKnown)
+            {
+                InstallerLog.Information($"Creating database \"{this.Tenant}\".");
+                await this.CreateDbAsync().ConfigureAwait(false);
+                return true;
             }
 
             return false;
         }
 
-        private bool CreateDb()
+        private async Task CreateDbAsync()
         {
-            string sql = "CREATE DATABASE {0} WITH ENCODING='UTF8' TEMPLATE=template0 LC_COLLATE='C' LC_CTYPE='C';";
-            sql = string.Format(CultureInfo.InvariantCulture, sql, Sanitizer.SanitizeIdentifierName(this.Catalog.ToLower()));
+            await Store.CreateDbAsync(this.Tenant).ConfigureAwait(false);
+        }
 
-            string catalog = Factory.MetaDatabase;
-            string connectionString = ConnectionString.GetSuperUserConnectionString(catalog);
-
-            using (var command = new NpgsqlCommand(sql))
-            {
-                return DbOperation.ExecuteNonQuery(this.Catalog, command, connectionString);
-            }
+        private async Task CleanUpDbAsync()
+        {
+            await Store.CleanupDbAsync(this.Tenant, this.Tenant).ConfigureAwait(false);
         }
     }
 }

@@ -1,11 +1,7 @@
-using System.Collections.Generic;
-using System.IO;
+using System;
 using System.Linq;
-using System.Text;
-using System.Web.Hosting;
 using Frapid.Configuration;
-using Frapid.Installer.Models;
-using Newtonsoft.Json;
+using Frapid.Installer.Helpers;
 using Quartz;
 
 namespace Frapid.Installer
@@ -15,42 +11,22 @@ namespace Frapid.Installer
         public void Execute(IJobExecutionContext context)
         {
             string url = context.JobDetail.Key.Name;
-            string catalog = DbConvention.GetCatalog(url);
-            var db = new DbInstaller(catalog);
-            db.Install();
+            InstallerLog.Verbose($"Installing frapid on domain {url}.");
 
-            var installables = GetInstallables();
-            foreach (var installable in installables)
+            try
             {
-                new AppInstaller(catalog, installable).Install();
+                var installer = new Tenant.Installer(url, false);
+                installer.InstallAsync().GetAwaiter().GetResult();
+
+                var site = new ApprovedDomainSerializer().Get().FirstOrDefault(x => x.DomainName.Equals(url));
+                DbInstalledDomains.AddAsync(site).GetAwaiter().GetResult();
+                new InstalledDomainSerializer().Add(site);
             }
-        }
-
-        private static IEnumerable<Installable> GetInstallables()
-        {
-            string root = HostingEnvironment.MapPath("~/");
-            var installables = new List<Installable>();
-
-            if (root == null)
+            catch (Exception ex)
             {
-                return installables;
+                InstallerLog.Error("Could not install frapid on {url} due to errors. Exception: {Exception}", url, ex);
+                throw;
             }
-
-            var files = Directory.GetFiles(root, "AppInfo.json", SearchOption.AllDirectories).ToList();
-
-            foreach (var app in files
-                .Select(file => File.ReadAllText(file, Encoding.UTF8))
-                .Select(JsonConvert.DeserializeObject<Installable>))
-            {
-                app.SetDependencies();
-
-                if (app.AutoInstall)
-                {
-                    installables.Add(app);
-                }
-            }
-
-            return installables;
         }
     }
 }

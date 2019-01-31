@@ -1,6 +1,6 @@
 ﻿using System.Globalization;
+using System.IO;
 using System.Web.Hosting;
-using Frapid.ApplicationState.Cache;
 using Frapid.Configuration;
 using static System.String;
 
@@ -8,35 +8,40 @@ namespace Frapid.WebsiteBuilder
 {
     public class Configuration
     {
-        private const string Path = "~/Catalogs/{0}/Areas/Frapid.WebsiteBuilder/";
+        private const string Path = "~/Tenants/{0}/Areas/Frapid.WebsiteBuilder/";
         private const string ConfigFile = "WebsiteBuilder.config";
         private const string DefaultThemeKey = "DefaultTheme";
 
-        public static string GetCurrentThemePath()
+        public static string GetCurrentThemePath(string tenant)
         {
-            string catalog = AppUsers.GetCatalog();
             string path = Path + "Themes/{1}/";
-            string theme = GetDefaultTheme();
+            string theme = GetDefaultTheme(tenant);
 
-            return Format(CultureInfo.InvariantCulture, path, catalog, theme);
+            return Format(CultureInfo.InvariantCulture, path, tenant, theme);
         }
 
-        public static string GetWebsiteBuilderPath()
+        public static string GetThemeDirectory(string tenant)
         {
-            string catalog = AppUsers.GetCatalog();
-            string path = HostingEnvironment.MapPath(Format(CultureInfo.InvariantCulture, Path, catalog));
+            string path = Path + "Themes";
 
-            return path != null && !System.IO.Directory.Exists(path) ? Empty : path;
+            return Format(CultureInfo.InvariantCulture, path, tenant);
         }
 
-        public static string GetDefaultTheme()
+        public static string GetWebsiteBuilderPath(string tenant)
         {
-            return Get(DefaultThemeKey);
+            string path = HostingEnvironment.MapPath(Format(CultureInfo.InvariantCulture, Path, tenant));
+
+            return path != null && !Directory.Exists(path) ? Empty : path;
         }
 
-        public static string Get(string key)
+        public static string GetDefaultTheme(string tenant)
         {
-            string path = GetWebsiteBuilderPath() + "/" + ConfigFile;
+            return Get(DefaultThemeKey, tenant);
+        }
+
+        public static string Get(string key, string tenant)
+        {
+            string path = GetWebsiteBuilderPath(tenant) + "/" + ConfigFile;
             return ConfigurationManager.ReadConfigurationValue(path, key);
         }
     }

@@ -10,14 +10,16 @@
 	"RealeasedOn": null,
 	"Description": "Frapid authentication module.",
 	"Category": "Core Modules",
+	"Hasi18N": true,
 	"Bundle": "Frapid Framework",
     "IsMeta": false,
 	"DbSchema": "account",
-	"BlankDbPath": "~/Areas/Frapid.Account/db/1.x/1.0/db-blank.sql",
-	"SampleDbPath": "~/Areas/Frapid.Account/db/1.x/1.0/db-sample.sql",
+	"BlankDbPath": "~/Areas/Frapid.Account/db/{DbServer}/1.x/1.0/account-blank.sql",
+	"SampleDbPath": null,
+	"PatchFilePath": null,
 	"InstallSample": true,
 	"My": "~/Areas/Frapid.Account/.my/db.sql",
-    "OverrideTemplatePath":"~/Areas/Frapid.Account/Override",
-    "OverrideDestination":"~/Catalogs/{0}/Areas",
-	"DependsOn": ["Frapid.Config", "Frapid.WebsiteBuilder"]
+    "OverrideTemplatePath":"~/Areas/Frapid.Account/Overrides",
+    "OverrideDestination":"~/Tenants/{0}/Areas",
+	"DependsOn": ["Frapid", "Frapid.Core"]
 }

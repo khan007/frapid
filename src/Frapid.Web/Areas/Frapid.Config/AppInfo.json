@@ -10,14 +10,16 @@
 	"RealeasedOn": null,
 	"Description": "Frapid configuration module.",
 	"Category": "Core Modules",
+	"Hasi18N": true,
 	"Bundle": "Frapid Framework",
     "IsMeta": false,
 	"DbSchema": "config",
-	"BlankDbPath": "~/Areas/Frapid.Config/db/config.sql",
+	"BlankDbPath": "~/Areas/Frapid.Config/db/{DbServer}/config.sql",
 	"SampleDbPath": null,
+    "PatchFilePath": null,
 	"InstallSample": false,
 	"My": "~/Areas/Frapid.Config/.my/db.sql",
-	"OverrideTemplatePath": null,
-    "OverrideDestination":"~/Catalogs/{0}/Areas/Frapid.Config",
-	"DependsOn": []
+	"OverrideTemplatePath": "~/Areas/Frapid.Config/Overrides",
+    "OverrideDestination":"~/Tenants/{0}/Areas/Frapid.Config",
+	"DependsOn": ["Frapid", "Frapid.Account"]
 }
